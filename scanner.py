@@ -41,10 +41,14 @@ def store_message(message, archive_dir):
 		logger.debug("Created path: "+str(dest))
 	
 	subject = ''.join(e for e in get_header_field(message, 'subject') if e.isalnum())
-        final_path = os.path.join(dest, subject)
-        logger.debug(str(final_path))
-	with open(final_path, "w") as out_file:
-		out_file.write(message.as_string())
+	subject = subject + date.strftime("%H%M")
+	final_path = os.path.join(dest, subject)
+	logger.debug(str(final_path))
+	if not os.path.exists(final_path):
+		with open(final_path, "w") as out_file:
+			out_file.write(message.as_string())
+	else:
+		logger.error("File exists: "+str(final_path))
 
 def parse_args(argv):
 	m = False
@@ -82,6 +86,8 @@ def set_up_logger(logfile):
 		logger.setLevel(logging.DEBUG)
 		handler = logging.FileHandler(logfile)
 		handler.setLevel(logging.DEBUG)
+		formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
+		handler.setFormatter(formatter)
 		logger.addHandler(handler)
 	else:
 		logger.disabled = True
@@ -91,19 +97,20 @@ def scan_maildir(maildir, archivedir):
 	inbox = mailbox.Maildir(maildir, factory=None)
 
 	for key in inbox.iterkeys():
-	    try:
-		message = inbox[key]
-	    except email.errors.MessageParseError:
-		continue                # The message is malformed. Just leave it.
+		try:
+			message = inbox[key]
+		except email.errors.MessageParseError:
+			continue                # The message is malformed. Just leave it.
 
-	    if recipient(message, "international@pirati.cz"):
-		if not_spam(message):
-			try:
-			    store_message(message, archivedir)
-	    	        except TypeError as e:
-		    	    logger.exception(e)
-		else:
-		    logger.info("SPAM: "+get_header_field(message, "Subject") + " FROM "+get_header_field(message, "From") + "[NOT STORED]")
+		if recipient(message, "international@pirati.cz"):
+			if not_spam(message):
+				try:
+					store_message(message, archivedir)
+				except TypeError as e:
+					logger.exception(e)
+					raise
+			else:
+				logger.info("SPAM: "+get_header_field(message, "Subject") + " FROM "+get_header_field(message, "From") + "[NOT STORED]")
 
 def usage():
 	print "arguments: -m|--maildir= <maildir path> -a|--archive= <where to archive> [-l|--logfile= <where to log>]"
@@ -111,7 +118,9 @@ def usage():
 def main(argv):
 	maildir, archive, logfile = parse_args(argv)
 	set_up_logger(logfile)
+	logging.getLogger('ScanLogger').info("Script started")
 	scan_maildir(maildir, archive)
+	logging.getLogger('ScanLogger').info("Script finished")
 
 if __name__ == "__main__":
     main(sys.argv[1:])
