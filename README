@@ -1,1 +1,6 @@
 archiv posty z international@pirati.cz
+
+archivacni skript
+prochazi Maildir a hleda postu doslou na international@pirati.cz, tu kopiruje do repozitare a nasledne commitne zmeny
+
+vyzaduje python 2.4
