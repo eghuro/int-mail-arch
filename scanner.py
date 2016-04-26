@@ -8,6 +8,7 @@ from email.header import decode_header
 from time import mktime
 from email.utils import parsedate
 from datetime import datetime
+from git import Repo, Actor
 
 def lookup(message, field, addr):
 	return addr in str(message[field])
@@ -47,8 +48,10 @@ def store_message(message, archive_dir):
 	if not os.path.exists(final_path):
 		with open(final_path, "w") as out_file:
 			out_file.write(message.as_string())
+		return final_path
 	else:
 		logger.error("File exists: "+str(final_path))
+		return None
 
 def parse_args(argv):
 	m = False
@@ -92,10 +95,17 @@ def set_up_logger(logfile):
 	else:
 		logger.disabled = True
 
+def commit(files):
+	repo = Repo(archivedir)
+	index = repo.index
+	index.add(files)
+	index.commit("Scanner script scanned mail")
+
 def scan_maildir(maildir, archivedir):
 	logger = logging.getLogger('ScanLogger')
 	inbox = mailbox.Maildir(maildir, factory=None)
 
+	new_files = []
 	for key in inbox.iterkeys():
 		try:
 			message = inbox[key]
@@ -105,12 +115,16 @@ def scan_maildir(maildir, archivedir):
 		if recipient(message, "international@pirati.cz"):
 			if not_spam(message):
 				try:
-					store_message(message, archivedir)
+					path = store_message(message, archivedir)
+					if not path is None:
+						new_files.append(path)
 				except TypeError as e:
 					logger.exception(e)
 					raise
 			else:
 				logger.info("SPAM: "+get_header_field(message, "Subject") + " FROM "+get_header_field(message, "From") + "[NOT STORED]")
+
+	commit(new_files)
 
 def usage():
 	print "arguments: -m|--maildir= <maildir path> -a|--archive= <where to archive> [-l|--logfile= <where to log>]"
