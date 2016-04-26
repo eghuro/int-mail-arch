@@ -51,7 +51,7 @@ def store_message(message, archive_dir):
 			out_file.write(message.as_string())
 		return final_path
 	else:
-		logger.error("File exists: "+str(final_path))
+		logger.debug("File exists: "+str(final_path))
 		return None
 
 def parse_args(argv):
