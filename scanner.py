@@ -1,6 +1,7 @@
 import os
 import sys
 import getopt
+import time
 import logging, logging.handlers
 import mailbox
 import email.errors
@@ -83,28 +84,39 @@ def parse_args(argv):
 
 	return maildir, archive, logfile
 
-def set_up_logger(logfile):
+def set_up_logger(logfile, archivedir):
+	formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
 	logger = logging.getLogger('ScanLogger')
 	if not logfile is None:
 		logger.setLevel(logging.DEBUG)
 		handler = logging.FileHandler(logfile)
 		handler.setLevel(logging.DEBUG)
-		formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
+		
 		handler.setFormatter(formatter)
 		logger.addHandler(handler)
-	else:
-		logger.disabled = True
 
-def commit(files):
+	logfile2 = os.path.join(archivedir, "log", time.strftime("%Y-%m-%d")+".log")
+	handler2 = logging.FileHandler(logfile2)
+	handler2.setLevel(logging.INFO)
+	handler2.setFormatter(formatter)
+	logger.addHandler(handler2)
+	return logfile2
+	
+
+def commit(archivedir, files):
+	logger = logging.getLogger('ScanLogger')
+	logger.info("Committing changes ...")
 	repo = Repo(archivedir)
 	index = repo.index
 	index.add(files)
 	index.commit("Scanner script scanned mail")
+	logger.info("Done")
 
 def scan_maildir(maildir, archivedir):
 	logger = logging.getLogger('ScanLogger')
 	inbox = mailbox.Maildir(maildir, factory=None)
 
+	logger.info("Scan started")
 	new_files = []
 	for key in inbox.iterkeys():
 		try:
@@ -124,16 +136,19 @@ def scan_maildir(maildir, archivedir):
 			else:
 				logger.info("SPAM: "+get_header_field(message, "Subject") + " FROM "+get_header_field(message, "From") + "[NOT STORED]")
 
-	commit(new_files)
+	logger.info("Scan finished")
+	return new_files
 
 def usage():
 	print "arguments: -m|--maildir= <maildir path> -a|--archive= <where to archive> [-l|--logfile= <where to log>]"
 
 def main(argv):
 	maildir, archive, logfile = parse_args(argv)
-	set_up_logger(logfile)
+	logfile2 = set_up_logger(logfile, archive)
 	logging.getLogger('ScanLogger').info("Script started")
-	scan_maildir(maildir, archive)
+	files = scan_maildir(maildir, archive)
+	files.append(logfile2)
+	commit(archive, files)
 	logging.getLogger('ScanLogger').info("Script finished")
 
 if __name__ == "__main__":
