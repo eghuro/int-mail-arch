@@ -1,4 +1,7 @@
 import os
+import sys
+import getopt
+import logging, logging.handlers
 import mailbox
 import email.errors
 from email.header import decode_header
@@ -18,9 +21,6 @@ def lookup_list(message, field_list, addr):
 def recipient(message, addr):
 	field_list = ['To', 'Cc', 'Bcc', 'X-Original-To']
 	return lookup_list(message, field_list, addr)
-	#return lookup(message, 'to', addr) or lookup(message, 'cc', addr) or lookup(message, 'bcc', addr)
-	# X-Original-To
-	#return (addr in str(message['to'])) or (addr in str(message['cc'])) or (addr in str(message['bcc']))
 
 def get_header_field(message, field):
 	return decode_header(message[field])[0][0]
@@ -28,45 +28,90 @@ def get_header_field(message, field):
 def get_date(message):
 	return datetime.fromtimestamp(mktime(parsedate(get_header_field(message, 'date'))))
 
-def store_message(message, dir):
+def not_spam(message):
+	return get_header_field(message, 'X-SPAM-Status').split(',')[0] == "No"
+
+def store_message(message, archive_dir):
+	logger = logging.getLogger('ScanLogger')
 	date = get_date(message)
 	
-	dest = os.path.join(dir, str(date.year), str(date.month), str(date.day))
+	dest = os.path.join(archive_dir, str(date.year), str(date.month), str(date.day))
 	if not os.path.exists(dest):
 		os.makedirs(dest)
-		print "Created path: "+str(dest)
+		logger.debug("Created path: "+str(dest))
 	
 	subject = ''.join(e for e in get_header_field(message, 'subject') if e.isalnum())
         final_path = os.path.join(dest, subject)
-        print str(final_path)
+        logger.debug(str(final_path))
 	with open(final_path, "w") as out_file:
 		out_file.write(message.as_string())
 
-inbox = mailbox.Maildir('/tmp/Maildir', factory=None)
+def parse_args(argv):
+	m = False
+	a = False
 
-for key in inbox.iterkeys():
-    try:
-        message = inbox[key]
-    except email.errors.MessageParseError:
-        continue                # The message is malformed. Just leave it.
+	maildir = None
+	archive = None
+	logfile = None
 
-    if recipient(message, "international@pirati.cz"):
-	#print message.keys()
-        if get_header_field(message, 'X-SPAM-Status').split(',')[0] == "No":
-        	try:
-		    store_message(message, "/home/alex/Documents/pirati/international-archive/")
-		#print get_date(message)
-		##print datetime.fromtimestamp(mktime(parsedate(get_header_field(message, 'date'))))
-		#print get_header_field(message, 'subject')
-		##print get_header_field(message, 'from')
-	
-		##xof = get_header_field(message, 'X-Original-From')
-		##if not xof is None:
-		##	print xof
-		##irt = get_header_field(message, 'In-Reply-To')
-		##if not irt is None:
-		##	print irt
-    	        except TypeError as e:
-	    	    print e
-        else:
-            print "SPAM: "+get_header_field(message, "Subject") + " FROM "+get_header_field(message, "From")
+	try:
+		opts, args = getopt.getopt(argv, "m:a:l:", ["maildir=", "archive=", "logfile="])
+	except getopt.GetoptError:
+		usage()
+		sys.exit(2)
+
+	for opt, arg in opts:
+		if opt in ("-m", "--maildir"):
+			m = True
+			maildir = arg
+		elif opt in ("-a", "--archive"):
+			a = True
+			archive = arg
+		elif opt in ("-l", "--logfile"):
+			logfile = arg
+
+	if not (m and a): #both maildir and archive are required
+		usage()
+		sys.exit(2)
+
+	return maildir, archive, logfile
+
+def set_up_logger(logfile):
+	logger = logging.getLogger('ScanLogger')
+	if not logfile is None:
+		logger.setLevel(logging.DEBUG)
+		handler = logging.FileHandler(logfile)
+		handler.setLevel(logging.DEBUG)
+		logger.addHandler(handler)
+	else:
+		logger.disabled = True
+
+def scan_maildir(maildir, archivedir):
+	logger = logging.getLogger('ScanLogger')
+	inbox = mailbox.Maildir(maildir, factory=None)
+
+	for key in inbox.iterkeys():
+	    try:
+		message = inbox[key]
+	    except email.errors.MessageParseError:
+		continue                # The message is malformed. Just leave it.
+
+	    if recipient(message, "international@pirati.cz"):
+		if not_spam(message):
+			try:
+			    store_message(message, archivedir)
+	    	        except TypeError as e:
+		    	    logger.exception(e)
+		else:
+		    logger.info("SPAM: "+get_header_field(message, "Subject") + " FROM "+get_header_field(message, "From") + "[NOT STORED]")
+
+def usage():
+	print "arguments: -m|--maildir= <maildir path> -a|--archive= <where to archive> [-l|--logfile= <where to log>]"
+
+def main(argv):
+	maildir, archive, logfile = parse_args(argv)
+	set_up_logger(logfile)
+	scan_maildir(maildir, archive)
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
