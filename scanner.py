@@ -105,12 +105,12 @@ def set_up_logger(logfile, archivedir):
 
 def commit(archivedir, files):
 	logger = logging.getLogger('ScanLogger')
-	logger.info("Committing changes ...")
+	logger.debug("Committing changes ...")
 	repo = Repo(archivedir)
 	index = repo.index
 	index.add(files)
 	index.commit("Scanner script scanned mail")
-	logger.info("Done")
+	logger.debug("Done")
 
 def scan_maildir(maildir, archivedir):
 	logger = logging.getLogger('ScanLogger')
@@ -145,11 +145,11 @@ def usage():
 def main(argv):
 	maildir, archive, logfile = parse_args(argv)
 	logfile2 = set_up_logger(logfile, archive)
-	logging.getLogger('ScanLogger').info("Script started")
+	logging.getLogger('ScanLogger').debug("Script started")
 	files = scan_maildir(maildir, archive)
 	files.append(logfile2)
 	commit(archive, files)
-	logging.getLogger('ScanLogger').info("Script finished")
+	logging.getLogger('ScanLogger').debug("Script finished")
 
 if __name__ == "__main__":
     main(sys.argv[1:])
