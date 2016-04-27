@@ -34,10 +34,10 @@ def get_date(message):
 def not_spam(message):
         key = "X-SPAM-Status"
         if key in message:
-    	    head = get_header_field(message, key)
-            return head.split(',')[0] == "No"
+    		head = get_header_field(message, key)
+        	return head.split(',')[0] == "No"
         else:
-            return True
+        	return True
 
 def store_message(message, archive_dir):
 	logger = logging.getLogger('ScanLogger')
@@ -77,7 +77,7 @@ def parse_args(argv):
 	logfile = None
 
 	try:
-		opts, args = getopt.getopt(argv, "m:a:l:", ["maildir=", "archive=", "logfile="])
+		opts, folders = getopt.getopt(argv, "m:a:l:", ["maildir=", "archive=", "logfile="])
 	except getopt.GetoptError:
 		usage()
 		sys.exit(2)
@@ -96,7 +96,7 @@ def parse_args(argv):
 		usage()
 		sys.exit(2)
 
-	return maildir, archive, logfile
+	return maildir, archive, logfile, folders
 
 def set_up_logger(logfile, archivedir):
 	formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
@@ -126,17 +126,14 @@ def commit(archivedir, files):
 	index.commit("Scanner script scanned mail")
 	logger.debug("Done")
 
-def scan_maildir(maildir, archivedir):
-	logger = logging.getLogger('ScanLogger')
-	inbox = mailbox.Maildir(maildir, factory=None)
-
-	logger.info("Scan started")
+def scan_folder(inbox, archivedir):
 	new_files = []
 	for key in inbox.iterkeys():
 		try:
 			message = inbox[key]
-		except email.errors.MessageParseError:
-			continue                # The message is malformed. Just leave it.
+		except email.errors.MessageParseError as e:
+			logger.warning("Malformed message: "+e, exc_info=True)
+			continue # The message is malformed. Just leave it.
 
 		if recipient(message, "international@pirati.cz"):
 			if not_spam(message):
@@ -149,19 +146,34 @@ def scan_maildir(maildir, archivedir):
 					raise
 			else:
 				logger.info("SPAM: "+get_header_field(message, "Subject") + " FROM "+get_header_field(message, "From") + "[NOT STORED]")
+	return new_files
+
+def scan_maildir(maildir, archivedir, folders):
+	logger = logging.getLogger('ScanLogger')
+	inbox = mailbox.Maildir(maildir, factory=None)
+
+	logger.info("Scan started")
+	new_files = []
+	
+	logger.info("Processing inbox")
+	new_files.append(scan_folder(inbox, archivedir))
+
+	for folder in folders:
+		logger.info("Processing "+folder)
+		sub = inbox.get_folder(folder)
+		new_files.append(scan_folder(sub, archivedir))
 
 	logger.info("Scan finished")
 	return new_files
 
 def usage():
-	print "arguments: -m|--maildir= <maildir path> -a|--archive= <where to archive> [-l|--logfile= <where to log>]"
+	print "arguments: -m|--maildir= <maildir path> -a|--archive= <where to archive> [-l|--logfile= <where to log>] [folders ...]"
 
 def main(argv):
-        #TODO: slozky
-	maildir, archive, logfile = parse_args(argv)
+	maildir, archive, logfile, folders = parse_args(argv)
 	logfile2 = set_up_logger(logfile, archive)
 	logging.getLogger('ScanLogger').debug("Script started")
-	files = scan_maildir(maildir, archive)
+	files = scan_maildir(maildir, archive, folders)
 	files.append(logfile2)
 	commit(archive, files)
 	logging.getLogger('ScanLogger').debug("Script finished")
