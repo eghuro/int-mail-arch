@@ -4,6 +4,7 @@ import getopt
 import time
 import logging, logging.handlers
 import mailbox
+import filecmp
 import email.errors
 from email.header import decode_header
 from time import mktime
@@ -31,13 +32,25 @@ def get_date(message):
 	return datetime.fromtimestamp(mktime(parsedate(get_header_field(message, 'date'))))
 
 def not_spam(message):
-	return get_header_field(message, 'X-SPAM-Status').split(',')[0] == "No"
+        key = "X-SPAM-Status"
+        if key in message:
+    	    head = get_header_field(message, key)
+            return head.split(',')[0] == "No"
+        else:
+            return True
 
 def store_message(message, archive_dir):
 	logger = logging.getLogger('ScanLogger')
 	date = get_date(message)
 	
-	dest = os.path.join(archive_dir, str(date.year), str(date.month), str(date.day))
+	#TODO: mesic den na dve platne cifry (01, 02, ... 10, 11) a upravit repozitar
+        #TODO: dat zpravu do samostatneho adresare:
+        #   - raw
+        #   - hlavicky Date, From, To, Subject
+        #   - text/plain (dekodovat z quoted-printable do utf-8), je-li
+        #   - text/html, je-li
+        #   - popr. prilohy
+        dest = os.path.join(archive_dir, str(date.year), str(date.month), str(date.day))
 	if not os.path.exists(dest):
 		os.makedirs(dest)
 		logger.debug("Created path: "+str(dest))
@@ -51,6 +64,7 @@ def store_message(message, archive_dir):
 			out_file.write(message.as_string())
 		return final_path
 	else:
+                # Mozna: (zapsat do tempu) a compare s puvodnim filem
 		logger.debug("File exists: "+str(final_path))
 		return None
 
@@ -143,6 +157,7 @@ def usage():
 	print "arguments: -m|--maildir= <maildir path> -a|--archive= <where to archive> [-l|--logfile= <where to log>]"
 
 def main(argv):
+        #TODO: slozky
 	maildir, archive, logfile = parse_args(argv)
 	logfile2 = set_up_logger(logfile, archive)
 	logging.getLogger('ScanLogger').debug("Script started")
